@@ -109,26 +109,30 @@ async def healthz(request):
 
 
 async def restore(request):
-    """Jednorazowa migracja: multipart 'snapshot' → Qdrant snapshot upload."""
-    form = await request.form()
-    f = form.get("snapshot")
-    if f is None:
-        return JSONResponse({"error": "brak pola 'snapshot'"}, status_code=400)
-    data = await f.read()
+    """Jednorazowa migracja: PUT raw body → wspólny wolumen → qdrant recover file://.
+    Streaming na dysk (bez RAM), bez multiparta."""
+    dst = "/exchange/upload.snapshot"
+    n = 0
+    with open(dst, "wb") as f:
+        async for chunk in request.stream():
+            f.write(chunk)
+            n += len(chunk)
     async with httpx.AsyncClient(timeout=900) as c:
-        r = await c.post(f"{QDRANT}/collections/{COLL}/snapshots/upload?priority=snapshot",
-                         files={"snapshot": (f.filename, data)})
+        r = await c.put(f"{QDRANT}/collections/{COLL}/snapshots/recover?wait=true",
+                        json={"location": "file:///exchange/upload.snapshot",
+                              "priority": "snapshot"})
     try:
         body = r.json()
     except Exception:
         body = {"raw": r.text[:500]}
+    body["uploaded_bytes"] = n
     return JSONResponse(body, status_code=r.status_code)
 
 
 app = Starlette(
     routes=[
         Route("/healthz", healthz),
-        Route("/admin/restore", restore, methods=["POST"]),
+        Route("/admin/restore", restore, methods=["PUT"]),
         Mount("/", app=mcp.streamable_http_app()),
     ],
     middleware=[Middleware(Auth)],
