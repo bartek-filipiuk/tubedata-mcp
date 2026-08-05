@@ -19,6 +19,7 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Mount, Route
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 QDRANT = os.environ.get("QDRANT_URL", "http://qdrant:6333")
 TOKEN = os.environ["MCP_TOKEN"]  # brak tokenu = świadomy crash na starcie
@@ -46,7 +47,11 @@ def yt_ts_url(url: str, ts: str | None) -> str:
     return f"{url}&t={secs}s"
 
 
-mcp = FastMCP("tubedata-kb", stateless_http=True)
+mcp = FastMCP("tubedata-kb", stateless_http=True,
+              transport_security=TransportSecuritySettings(
+                  allowed_hosts=["kbdata.devince.dev", "kbdata.devince.dev:443",
+                                 "localhost", "127.0.0.1"],
+                  allowed_origins=["https://kbdata.devince.dev"]))
 
 
 @mcp.tool()
