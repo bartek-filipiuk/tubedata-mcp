@@ -6,6 +6,7 @@ Endpoints:
   /admin/restore  — jednorazowy upload snapshotu Qdranta (multipart 'snapshot'); też za tokenem
   /healthz        — bez tokenu (healthcheck Coolify)
 """
+import contextlib
 import hmac
 import os
 import re
@@ -135,7 +136,15 @@ async def restore(request):
     return JSONResponse(body, status_code=r.status_code)
 
 
+@contextlib.asynccontextmanager
+async def lifespan(app):
+    # streamable-http wymaga działającego session managera FastMCP
+    async with mcp.session_manager.run():
+        yield
+
+
 app = Starlette(
+    lifespan=lifespan,
     routes=[
         Route("/healthz", healthz),
         Route("/admin/restore", restore, methods=["PUT"]),
