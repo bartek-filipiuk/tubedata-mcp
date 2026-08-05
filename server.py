@@ -109,14 +109,20 @@ async def healthz(request):
 
 
 async def restore(request):
-    """Jednorazowa migracja: PUT raw body → wspólny wolumen → qdrant recover file://.
-    Streaming na dysk (bez RAM), bez multiparta."""
+    """Migracja w częściach (proxy tnie po 60 s): PUT ?part=N (append), ostatnia
+    część z ?finalize=1 odpala qdrant recover z pliku na wspólnym wolumenie."""
     dst = "/exchange/upload.snapshot"
+    part = request.query_params.get("part", "0")
+    finalize = request.query_params.get("finalize") == "1"
+    mode = "wb" if part == "0" else "ab"
     n = 0
-    with open(dst, "wb") as f:
+    with open(dst, mode) as f:
         async for chunk in request.stream():
             f.write(chunk)
             n += len(chunk)
+    size = os.path.getsize(dst)
+    if not finalize:
+        return JSONResponse({"part": part, "received": n, "total_so_far": size})
     async with httpx.AsyncClient(timeout=900) as c:
         r = await c.put(f"{QDRANT}/collections/{COLL}/snapshots/recover?wait=true",
                         json={"location": "file:///exchange/upload.snapshot",
@@ -125,7 +131,7 @@ async def restore(request):
         body = r.json()
     except Exception:
         body = {"raw": r.text[:500]}
-    body["uploaded_bytes"] = n
+    body["snapshot_size"] = size
     return JSONResponse(body, status_code=r.status_code)
 
 
